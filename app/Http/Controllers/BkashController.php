@@ -13,18 +13,14 @@ class BkashController extends Controller
 
     public function __construct()
     {
-        // Sandbox Base URL
-          $this->base_url = 'https://checkout.sandbox.bka.sh/v1.2.0-beta';
-
-        // Live Base URL
-        //$this->base_url = 'https://checkout.pay.bka.sh/v1.2.0-beta'; 
+        $this->base_url = env('BKASH_BASE_URL'); 
     }
 
     public function authHeaders(){
         return array(
             'Content-Type:application/json',
             'Authorization:' .$this->grant(),
-            'X-APP-Key:'.env('BKASH_CHECKOUT_APP_KEY')
+            'X-APP-Key:'.env('BKASH_APP_KEY')
         );
     }
          
@@ -36,6 +32,8 @@ class BkashController extends Controller
         curl_setopt($curl,CURLOPT_POSTFIELDS, $body_data_json);
         curl_setopt($curl,CURLOPT_FOLLOWLOCATION, 1);
         curl_setopt($curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, FALSE);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, FALSE);
         $response = curl_exec($curl);
         curl_close($curl);
         return $response;
@@ -47,6 +45,8 @@ class BkashController extends Controller
         curl_setopt($curl,CURLOPT_CUSTOMREQUEST, $method);
         curl_setopt($curl,CURLOPT_RETURNTRANSFER, true);
         curl_setopt($curl,CURLOPT_FOLLOWLOCATION, 1);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, FALSE);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, FALSE);
         $response = curl_exec($curl);
         curl_close($curl);
         return $response;
@@ -56,39 +56,45 @@ class BkashController extends Controller
     {
         $header = array(
                 'Content-Type:application/json',
-                'username:'.env('BKASH_CHECKOUT_USER_NAME'),
-                'password:'.env('BKASH_CHECKOUT_PASSWORD')
+                'username:'.env('BKASH_USER_NAME'),
+                'password:'.env('BKASH_PASSWORD')
                 );
 
         $header_data_json=json_encode($header);
 
-        $body_data = array('app_key'=> env('BKASH_CHECKOUT_APP_KEY'), 'app_secret'=>env('BKASH_CHECKOUT_APP_SECRET'));
+        $body_data = array('app_key'=> env('BKASH_APP_KEY'), 'app_secret'=>env('BKASH_APP_SECRET'));
         $body_data_json=json_encode($body_data);
-        
         $response = $this->curlWithBody('/checkout/token/grant',$header,'POST',$body_data_json);
-
+    
 
         $token = json_decode($response)->id_token;
 
         return $token;
     }
+    
+    public function confirm(Request $request)
+    {
+        return view('Iframe.confirm');
+    }
 
     public function payment(Request $request)
     {
-        $amount = 10000;
-        Session::put('payment_amount', $amount);
-
         return view('Iframe.pay')->with([
-            'amount' => $amount,
+            'amount' => $request->amount,
         ]);
     }
 
     public function createPayment(Request $request)
-    {    
-        $header =$this->authHeaders();
+    {   
+        $allRequest = $request->all();
 
+        if(!$allRequest['amount'] || $allRequest['amount'] < 1){
+            return redirect()->route('bkash-payment');     
+        }
+
+        $header =$this->authHeaders();
         $body_data = array(
-            'amount' => Session::get('payment_amount'),
+            'amount' => $allRequest['amount'],
             'currency' => 'BDT',
             'intent' => 'sale',
             'merchantInvoiceNumber' => "Inv".Str::random(8)
@@ -96,15 +102,13 @@ class BkashController extends Controller
         $body_data_json=json_encode($body_data);
 
         $response = $this->curlWithBody('/checkout/payment/create',$header,'POST',$body_data_json);
-        
-        Session::put('paymentID', json_decode($response)->paymentID);
 
         return $response;
     }
 
     public function executePayment(Request $request)
     {
-        $paymentID = Session::get('paymentID');
+        $paymentID = $request->paymentID;
 
         $header =$this->authHeaders();
 
@@ -118,15 +122,12 @@ class BkashController extends Controller
             // if execute api failed to response
             sleep(1);
             $response = $this->queryIframe($paymentID);
+            $arr = json_decode($response,true);
         }
-        
-        Session::put('response',$response);
 
-        $response_arr = json_decode($response,true);
-
-        if(isset($response_arr['trxID'])){
+        if(isset($arr['trxID'])){
             // your database operation
-            // save $response
+            Session::put('response','bKash Response: '.$response);
         }
 
         return $response;
@@ -137,6 +138,15 @@ class BkashController extends Controller
         $header =$this->authHeaders();
 
         $response = $this->curlWithoutBody('/checkout/payment/query/'.$paymentID,$header,'GET');
+
+         return $response;
+    }
+
+    public function query(Request $request){
+
+        $header =$this->authHeaders();
+
+        $response = $this->curlWithoutBody('/checkout/payment/query/'.$request->paymentID,$header,'GET');
 
          return $response;
     }
@@ -176,15 +186,17 @@ class BkashController extends Controller
 
         $response = $this->curlWithBody('/checkout/payment/refund',$header,'POST',$body_data_json);
 
-        $arr = json_decode($response,true);
+        $res_array = json_decode($response,true);
         
-       // your database operation
-       // save $response
-
+       if(isset($res_array['refundTrxID'])){
+        // your database insert operation    
+        $message = "Refund successful.bKash refund trx ID : ".$res_array['refundTrxID'];
+    }else{
+        $message = "Refund Failed !!";
+    }
         return view('Iframe.refund')->with([
-            'response' => $response,
+            'response' => $message,
         ]);
     }
 
 }
-
