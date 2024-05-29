@@ -10,33 +10,32 @@
     {{-- Live Bkash Js Link --}}
     {{-- <script src="https://scripts.pay.bka.sh/versions/1.2.0-beta/checkout/bKash-checkout.js"></script> --}}
    
-    <title>Bkash Payment</title>
+    <title>bKash Payment</title>
     <style>
-      .center {
+       .image-button-container {
         display: flex;
         justify-content: center;
-        align-items: center;
-        height: 200px;
-      }
-
-      button {
-        background-color: red;
-        border: none;
-        color: white;
-        padding: 15px 32px;
-        text-align: center;
-        text-decoration: none;
+    }
+     .image-button {
         display: inline-block;
-        font-size: 16px;
-        margin: 4px 2px;
+        background: none;
+        border: none;
         cursor: pointer;
-      }
+        padding: 0;
+    }
+
+    .image-button img {
+        width: 300px; /* Adjust the width as needed */
+        height: auto; /* Adjust the height as needed */
+    }
     </style>
 </head>
 <body>
-  <div class="center">
-    <input type="hidden" id="amount" name="amount" value="{{ $amount }}"><br><br>
-    <button type="button" id="bKash_button">Pay with bKash</button>
+  <input type="hidden" id="amount" name="amount" value="{{ $amount }}">
+  <div class="image-button-container">
+    <button class="image-button" id="bKash_button">
+      <img src="{{ asset('payment.png') }}" alt="Example Image">
+  </button>
   </div>
 <script>
         let amount = document.getElementById('amount').value;
@@ -55,11 +54,12 @@
            console.log("create working !!")
             $.ajax({
               url: '{{ route('bkash-create') }}',
-              type: 'GET',
+              type: 'POST',
               data: JSON.stringify(request),
               contentType: 'application/json',
               success: function(data) {
                 data = JSON.parse(data);
+                console.log(data)
                 if (data && data.paymentID != null) {
                   paymentID = data.paymentID;
                   bKash.create().onSuccess(data); //pass the whole response data in bKash.create().onSucess() method as a parameter
@@ -76,7 +76,7 @@
             console.log("execute working !!")
             $.ajax({
               url: '{{ route('bkash-execute') }}',
-              type: 'GET',
+              type: 'POST',
               contentType: 'application/json',
               data: JSON.stringify({
                 "paymentID": paymentID
@@ -84,10 +84,9 @@
               success: function(data) {
                 data = JSON.parse(data);
                 if (data && data.paymentID != null) {
-                  console.log("trxID: ",data.trxID)
                    window.location.href = '{{ route('bkash-success') }}'; // Your redirect route when successful payment
                 } else {
-                    console.log("error ");
+                    console.log(data.statusMessage);
                     window.location.href = '{{ route('bkash-fail') }}'; // Your redirect route when fail payment
                     bKash.execute().onError();
                 }
@@ -98,7 +97,7 @@
             });
           },
           onClose: function(){
-            window.location.href='/';  // Your redirect route when cancel payment may be cart 
+            window.location.href='{{ route('bkash-fail') }}';  // Your redirect route when cancel payment may be cart 
           },
           });
 </script>
